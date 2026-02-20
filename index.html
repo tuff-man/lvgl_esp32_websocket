@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32 ADC Monitor</title>
+    <style>
+        :root {
+            --primary: #00d2d3;
+            --bg: #1e272e;
+            --card-bg: #2f3542;
+            --text: #ffffff;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 2rem;
+            margin: 0;
+        }
+
+        .container {
+            max-width: 600px;
+            width: 100%;
+            background: var(--card-bg);
+            padding: 2rem;
+            border-radius: 1.5rem;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            text-align: center;
+        }
+
+        h1 { margin-bottom: 2rem; color: var(--primary); }
+
+        .status-badge {
+            display: inline-block;
+            padding: 0.5rem 1rem;
+            border-radius: 2rem;
+            background: #ff4757;
+            margin-bottom: 2rem;
+            font-weight: bold;
+        }
+
+        .status-badge.connected { background: #2ed573; }
+
+        .gauge-container {
+            margin: 2rem 0;
+        }
+
+        .value-display {
+            font-size: 5rem;
+            font-weight: 800;
+            color: var(--primary);
+            text-shadow: 0 0 20px rgba(0,210,211,0.3);
+        }
+
+        .controls {
+            display: grid;
+            gap: 1rem;
+            margin-top: 2rem;
+        }
+
+        input {
+            padding: 1rem;
+            border-radius: 0.8rem;
+            border: none;
+            background: #57606f;
+            color: white;
+            font-size: 1rem;
+        }
+
+        button {
+            padding: 1rem;
+            border-radius: 0.8rem;
+            border: none;
+            background: var(--primary);
+            color: var(--bg);
+            font-weight: bold;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: transform 0.2s, background 0.2s;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            background: #00eeee;
+        }
+
+        button.disconnect {
+            background: #ff4757;
+            color: white;
+        }
+
+        .log {
+            margin-top: 2rem;
+            text-align: left;
+            background: #000;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            height: 150px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 0.9rem;
+            color: #2ed573;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>ESP32 Monitor</h1>
+        <div id="status" class="status-badge">Disconnected</div>
+        
+        <div class="gauge-container">
+            <div id="adc-value" class="value-display">0</div>
+            <div>0 ~ 255 (ADC)</div>
+        </div>
+
+        <div class="controls">
+            <input type="text" id="ip" placeholder="ESP32 IP (e.g. 192.168.1.100)" value="">
+            <button id="connect-btn">Connect</button>
+            <hr style="border-color: #57606f; margin: 1rem 0;">
+            <input type="text" id="message" placeholder="Send message to ESP32...">
+            <button id="send-btn">Send Message</button>
+        </div>
+
+        <div id="log" class="log">Ready...</div>
+    </div>
+
+    <script>
+        let ws = null;
+        const statusBadge = document.getElementById('status');
+        const adcDisplay = document.getElementById('adc-value');
+        const logArea = document.getElementById('log');
+        const connectBtn = document.getElementById('connect-btn');
+        const ipInput = document.getElementById('ip');
+        const msgInput = document.getElementById('message');
+        const sendBtn = document.getElementById('send-btn');
+
+        function appendLog(msg) {
+            const time = new Date().toLocaleTimeString();
+            logArea.innerHTML += `<div>[${time}] ${msg}</div>`;
+            logArea.scrollTop = logArea.scrollHeight;
+        }
+
+        connectBtn.onclick = () => {
+            if (ws) {
+                ws.close();
+                return;
+            }
+
+            const ip = ipInput.value.trim();
+            if (!ip) {
+                alert('IP 주소를 입력해주세요.');
+                return;
+            }
+
+            appendLog(`Connecting to ws://${ip}:8000/ws...`);
+            ws = new WebSocket(`ws://${ip}:8000/ws`);
+
+            ws.onopen = () => {
+                statusBadge.innerText = 'Connected';
+                statusBadge.classList.add('connected');
+                connectBtn.innerText = 'Disconnect';
+                connectBtn.classList.add('disconnect');
+                appendLog('Connected to ESP32');
+            };
+
+            ws.onclose = () => {
+                statusBadge.innerText = 'Disconnected';
+                statusBadge.classList.remove('connected');
+                connectBtn.innerText = 'Connect';
+                connectBtn.classList.remove('disconnect');
+                appendLog('Connection closed');
+                ws = null;
+            };
+
+            ws.onerror = (err) => {
+                appendLog('Error occurred');
+                console.error(err);
+            };
+
+            ws.onmessage = (event) => {
+                const val = event.data;
+                if (!isNaN(val)) {
+                    adcDisplay.innerText = val;
+                } else {
+                    appendLog(`Server says: ${val}`);
+                }
+            };
+        };
+
+        sendBtn.onclick = () => {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                alert('연결이 되어있지 않습니다.');
+                return;
+            }
+            const msg = msgInput.value.trim();
+            if (msg) {
+                ws.send(msg);
+                appendLog(`Sent: ${msg}`);
+                msgInput.value = '';
+            }
+        };
+    </script>
+</body>
+</html>
